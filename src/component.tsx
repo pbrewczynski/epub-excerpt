@@ -1,46 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { createRandomExcerpt, ExcerptOptions } from './core.js';
+import { loadEpub, extractExcerpt, EpubData } from './core.js';
 
-export interface EpubExcerptProps extends ExcerptOptions {
-  /**
-   * URL to the .epub file or a Blob/File object.
-   */
+export interface EpubExcerptProps {
   src: string | Blob | File;
-  /**
-   * Custom className for the container.
-   */
+  defaultMode?: 'sentences' | 'words';
+  defaultAmount?: number;
   className?: string;
-  /**
-   * Custom style for the container.
-   */
   style?: React.CSSProperties;
-  /**
-   * Callback when the excerpt is generated.
-   */
   onExcerptGenerated?: (excerpt: string) => void;
-  /**
-   * Label for the text field.
-   */
-  label?: string;
 }
 
 export const EpubExcerpt: React.FC<EpubExcerptProps> = ({
   src,
-  maxWords = 250,
-  maxSentences,
+  defaultMode = 'sentences',
+  defaultAmount = 5,
   className,
   style,
   onExcerptGenerated,
-  label = 'Random Excerpt',
 }) => {
+  // Data States
+  const [bookData, setBookData] = useState<EpubData | null>(null);
   const [excerpt, setExcerpt] = useState<string>('');
+  
+  // UI States
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<boolean>(false);
+  
+  // Option States
+  const [mode, setMode] = useState<'sentences' | 'words'>(defaultMode);
+  const [amount, setAmount] = useState<number>(defaultAmount);
 
+  // Load the EPUB only once when `src` changes
   useEffect(() => {
-    async function fetchAndExcerpt() {
+    async function fetchBook() {
       setLoading(true);
       setError(null);
+      setBookData(null);
+      setExcerpt('');
       try {
         let data: ArrayBuffer;
         if (typeof src === 'string') {
@@ -51,21 +48,58 @@ export const EpubExcerpt: React.FC<EpubExcerptProps> = ({
           data = await src.arrayBuffer();
         }
 
-        const generatedExcerpt = await createRandomExcerpt(data, {
-          maxWords,
-          maxSentences,
-        });
-        setExcerpt(generatedExcerpt);
-        if (onExcerptGenerated) onExcerptGenerated(generatedExcerpt);
+        const parsedData = await loadEpub(data);
+        setBookData(parsedData);
       } catch (err: any) {
-        setError(err.message || 'An error occurred while processing the EPUB');
+        setError(err.message || 'An error occurred while parsing the EPUB');
       } finally {
         setLoading(false);
       }
     }
 
-    fetchAndExcerpt();
-  }, [src, maxWords, maxSentences]);
+    fetchBook();
+  }, [src]);
+
+  // Generate excerpt handler
+  const handleGenerate = () => {
+    if (!bookData) return;
+    
+    const options = mode === 'sentences' 
+      ? { maxSentences: amount } 
+      : { maxWords: amount };
+      
+    const newExcerpt = extractExcerpt(bookData.fullText, options);
+    setExcerpt(newExcerpt);
+    setCopied(false);
+    
+    if (onExcerptGenerated) onExcerptGenerated(newExcerpt);
+  };
+
+  // Auto-generate first excerpt when book loads
+  useEffect(() => {
+    if (bookData && !excerpt) {
+      handleGenerate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookData]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(excerpt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
+  if (loading) {
+    return <div style={{ padding: '20px', ...style }}>Loading book data...</div>;
+  }
+
+  if (error) {
+    return <div style={{ color: 'red', padding: '20px', ...style }}>Error: {error}</div>;
+  }
 
   return (
     <div 
@@ -73,32 +107,103 @@ export const EpubExcerpt: React.FC<EpubExcerptProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px',
-        width: '100%',
+        gap: '16px',
+        padding: '20px',
+        border: '1px solid #e0e0e0',
+        borderRadius: '8px',
         fontFamily: 'sans-serif',
+        maxWidth: '800px',
+        backgroundColor: '#fff',
         ...style
       }}
     >
-      {label && <label style={{ fontWeight: 'bold' }}>{label}</label>}
-      {loading && <div className="epub-excerpt-loading">Loading excerpt...</div>}
-      {error && <div className="epub-excerpt-error" style={{ color: 'red' }}>Error: {error}</div>}
-      {!loading && !error && (
+      {/* Header */}
+      <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#333' }}>
+        {bookData?.title || 'Unknown Book'}
+      </h2>
+
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Extract By</label>
+          <select 
+            value={mode} 
+            onChange={(e) => setMode(e.target.value as 'sentences' | 'words')}
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            <option value="sentences">Sentences</option>
+            <option value="words">Words</option>
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Amount</label>
+          <input 
+            type="number" 
+            min="1" 
+            value={amount} 
+            onChange={(e) => setAmount(Number(e.target.value))}
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '80px' }}
+          />
+        </div>
+
+        <button 
+          onClick={handleGenerate}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#007bff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            height: '35px'
+          }}
+        >
+          Generate Random Excerpt
+        </button>
+      </div>
+
+      {/* Output Area */}
+      <div style={{ position: 'relative' }}>
         <textarea
           readOnly
           value={excerpt}
           style={{
-            minHeight: '200px',
             width: '100%',
-            padding: '12px',
-            borderRadius: '4px',
+            minHeight: '200px',
+            padding: '16px',
+            borderRadius: '6px',
             border: '1px solid #ccc',
-            fontSize: '14px',
-            lineHeight: '1.5',
+            fontSize: '15px',
+            lineHeight: '1.6',
             backgroundColor: '#f9f9f9',
-            resize: 'vertical'
+            resize: 'vertical',
+            boxSizing: 'border-box'
           }}
         />
-      )}
+        {excerpt && (
+          <button
+            onClick={handleCopy}
+            style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              padding: '6px 12px',
+              backgroundColor: copied ? '#28a745' : '#e0e0e0',
+              color: copied ? '#fff' : '#333',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 'bold',
+              transition: 'background-color 0.2s'
+            }}
+          >
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        )}
+      </div>
     </div>
   );
 };
