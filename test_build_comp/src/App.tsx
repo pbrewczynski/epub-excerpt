@@ -5,9 +5,9 @@ function App() {
     <div style={{ maxWidth: '600px', margin: '40px auto' }}>
       <h1>Epub Excerpt Playground</h1>
       
-      {/* Make sure to place a test.epub file in your example/public directory */}
+      {/* Uses the test.epub file located in the public directory */}
       <EpubExcerpt 
-        src="/Users/pawel/Documents/0to1.epub" 
+        src="0to1.epub" 
         defaultMode="sentences"
         defaultAmount={3}
       />

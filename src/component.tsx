@@ -42,10 +42,20 @@ export const EpubExcerpt: React.FC<EpubExcerptProps> = ({
         let data: ArrayBuffer;
         if (typeof src === 'string') {
           const response = await fetch(src);
-          if (!response.ok) throw new Error(`Failed to fetch EPUB: ${response.statusText}`);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch EPUB: ${response.status} ${response.statusText}`);
+          }
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('text/html')) {
+            throw new Error('Received HTML instead of an EPUB file. Check if the file exists and the path is correct.');
+          }
           data = await response.arrayBuffer();
         } else {
           data = await src.arrayBuffer();
+        }
+
+        if (data.byteLength === 0) {
+          throw new Error('The fetched EPUB file is empty.');
         }
 
         const parsedData = await loadEpub(data);
@@ -64,15 +74,20 @@ export const EpubExcerpt: React.FC<EpubExcerptProps> = ({
   const handleGenerate = () => {
     if (!bookData) return;
     
-    const options = mode === 'sentences' 
-      ? { maxSentences: amount } 
-      : { maxWords: amount };
-      
-    const newExcerpt = extractExcerpt(bookData.fullText, options);
-    setExcerpt(newExcerpt);
-    setCopied(false);
+    // Briefly clear to show something is happening
+    setExcerpt('');
     
-    if (onExcerptGenerated) onExcerptGenerated(newExcerpt);
+    setTimeout(() => {
+      const options = mode === 'sentences' 
+        ? { maxSentences: amount } 
+        : { maxWords: amount };
+        
+      const newExcerpt = extractExcerpt(bookData.fullText, options);
+      setExcerpt(newExcerpt);
+      setCopied(false);
+      
+      if (onExcerptGenerated) onExcerptGenerated(newExcerpt);
+    }, 50);
   };
 
   // Auto-generate first excerpt when book loads
@@ -178,6 +193,7 @@ export const EpubExcerpt: React.FC<EpubExcerptProps> = ({
             fontSize: '15px',
             lineHeight: '1.6',
             backgroundColor: '#f9f9f9',
+            color: '#333', // Explicitly set dark text color
             resize: 'vertical',
             boxSizing: 'border-box'
           }}

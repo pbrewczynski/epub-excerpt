@@ -21,6 +21,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:lib": "tsup",
     "dev": "tsup --watch",
     "lint": "tsc"
   },

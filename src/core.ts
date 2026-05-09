@@ -61,7 +61,13 @@ export async function loadEpub(epubData: Buffer | ArrayBuffer | Blob): Promise<E
   for (const filename of files) {
     const content = await zip.files[filename].async('string');
     const $ = cheerio.load(content);
-    $('script, style, nav, header, footer').remove();
+    
+    // Remove unwanted tags: scripts, styles, navigation, headers, footers, and all headings
+    $('script, style, nav, header, footer, h1, h2, h3, h4, h5, h6').remove();
+    
+    // Remove common class names for headers, footers, page numbers, and titles
+    $('.header, .footer, .page-header, .page-footer, .pagenum, .pagebreak, .chapter-title, .book-title, .author-name').remove();
+    
     fullText += ($('body').text() || $.text()) + '\n\n';
   }
 
