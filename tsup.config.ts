@@ -1,13 +1,26 @@
 import { defineConfig } from 'tsup';
 
-export default defineConfig({
-  entry: ['src/index.ts', 'src/cli.ts'],
-  format: ['cjs', 'esm'],
-  dts: true,
-  splitting: false,
-  sourcemap: true,
-  clean: true,
-  external: ['react', 'react-dom'],
-  platform: 'node',
-  shims: true,
-});
+export default defineConfig([
+  {
+    entry: ['src/index.ts'],
+    format: ['cjs', 'esm'],
+    dts: true,
+    splitting: false,
+    sourcemap: 'inline',
+    clean: true,
+    external: ['react', 'react-dom'],
+    noExternal: ['jszip', 'cheerio', 'cheerio-select', 'domhandler', 'domutils', 'htmlparser2', 'entities'],
+    platform: 'browser',
+    treeshake: true,
+  },
+  {
+    entry: ['src/cli.ts'],
+    format: ['cjs'],
+    dts: true,
+    splitting: false,
+    sourcemap: true,
+    clean: false, // Don't clean here or it might delete index.js
+    platform: 'node',
+    shims: true,
+  }
+]);

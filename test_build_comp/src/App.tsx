@@ -7,9 +7,9 @@ function App() {
       
       {/* Make sure to place a test.epub file in your example/public directory */}
       <EpubExcerpt 
-        src="/test.epub" 
-        maxSentences={3} 
-        label="Random 3 Sentences"
+        src="/Users/pawel/Documents/0to1.epub" 
+        defaultMode="sentences"
+        defaultAmount={3}
       />
     </div>
   );

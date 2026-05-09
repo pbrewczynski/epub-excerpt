@@ -9,7 +9,8 @@
     "epub-excerpt": "./dist/cli.cjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "exports": {
     ".": {
