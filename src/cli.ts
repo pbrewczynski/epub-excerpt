@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import fs from 'fs';
 import path from 'path';
+import clipboardy from 'clipboardy';
 import { loadEpub, extractExcerpt, generateTTF, generateTTFPrompt } from './core.js';
 
 const program = new Command();
@@ -18,6 +19,7 @@ program
   .option('-j, --json', 'Output as JSON')
   .option('-t, --ttf', 'Output in Twigit Text Format (.ttf)')
   .option('-p, --prompt', 'Output an LLM prompt for TTF translation/improvement')
+  .option('-c, --copy', 'Copy the LLM prompt directly to clipboard')
   .option('--lang <string>', 'Source language for TTF', 'EN')
   .option('--target-lang <string>', 'Target language for TTF', 'PL')
   .action(async (epubPath, options) => {
@@ -42,13 +44,27 @@ program
       const { title, fullText } = await loadEpub(buffer);
       const excerpt = extractExcerpt(fullText, excerptOptions);
 
-      if (options.prompt) {
+      if (options.prompt || options.copy) {
         const prompt = generateTTFPrompt(excerpt, title, options.lang, options.targetLang);
-        console.log('\n' + '═'.repeat(60));
-        console.log('LLM PROMPT (Copy the text below)');
-        console.log('═'.repeat(60) + '\n');
-        console.log(prompt);
-        console.log('\n' + '═'.repeat(60) + '\n');
+        
+        if (options.copy) {
+          try {
+            await clipboardy.write(prompt);
+            console.log('✓ LLM prompt copied to clipboard!');
+          } catch (err) {
+            console.error('Failed to copy to clipboard.');
+            // Fallback to showing prompt if copy fails
+            options.prompt = true;
+          }
+        }
+
+        if (options.prompt || !options.copy) {
+          console.log('\n' + '═'.repeat(60));
+          console.log('LLM PROMPT (Copy the text below)');
+          console.log('═'.repeat(60) + '\n');
+          console.log(prompt);
+          console.log('\n' + '═'.repeat(60) + '\n');
+        }
       } else if (options.ttf) {
         const ttf = generateTTF(excerpt, title, options.lang, options.targetLang);
         console.log(ttf);
