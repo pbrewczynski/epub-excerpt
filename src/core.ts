@@ -39,9 +39,9 @@ export function generateTTF(text: string, title?: string, sourceLang?: string, t
   const words = text.split(/\s+/).filter(w => w.length > 0);
   const phrases: { p: string; t: string }[] = [];
   
-  for (let i = 0; i < words.length; i += 3) {
+  for (const word of words) {
     phrases.push({
-      p: words.slice(i, i + 3).join(' '),
+      p: word,
       t: ""
     });
   }
