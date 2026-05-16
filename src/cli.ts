@@ -44,7 +44,11 @@ program
 
       if (options.prompt) {
         const prompt = generateTTFPrompt(excerpt, title, options.lang, options.targetLang);
+        console.log('\n' + '═'.repeat(60));
+        console.log('LLM PROMPT (Copy the text below)');
+        console.log('═'.repeat(60) + '\n');
         console.log(prompt);
+        console.log('\n' + '═'.repeat(60) + '\n');
       } else if (options.ttf) {
         const ttf = generateTTF(excerpt, title, options.lang, options.targetLang);
         console.log(ttf);

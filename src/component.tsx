@@ -53,6 +53,7 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [promptCopied, setPromptCopied] = useState<boolean>(false);
+  const [currentPrompt, setCurrentPrompt] = useState<string>('');
   
   // Option States
   const [mode, setMode] = useState<'sentences' | 'words'>(defaultMode);
@@ -164,6 +165,7 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
   const handleCopyPrompt = async () => {
     try {
       const prompt = generateTTFPrompt(excerpt, bookData?.title, sourceLang, targetLang);
+      setCurrentPrompt(prompt);
       await navigator.clipboard.writeText(prompt);
       setPromptCopied(true);
       setTimeout(() => setPromptCopied(false), 2000);
@@ -316,44 +318,75 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
 
       {/* Output Area (Optional) */}
       {showPreview && (
-        <div style={{ position: 'relative' }}>
-          <textarea
-            readOnly
-            value={excerpt}
-            style={{
-              width: '100%',
-              minHeight: '200px',
-              padding: '16px',
-              borderRadius: '6px',
-              border: '1px solid #ccc',
-              fontSize: '15px',
-              lineHeight: '1.6',
-              backgroundColor: '#f9f9f9',
-              color: '#333',
-              resize: 'vertical',
-              boxSizing: 'border-box'
-            }}
-          />
-          {excerpt && (
-            <button
-              onClick={handleCopy}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ position: 'relative' }}>
+            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#555', marginBottom: '8px' }}>
+              Text Excerpt
+            </label>
+            <textarea
+              readOnly
+              value={excerpt}
               style={{
-                position: 'absolute',
-                top: '8px',
-                right: '8px',
-                padding: '6px 12px',
-                backgroundColor: copied ? '#28a745' : '#e0e0e0',
-                color: copied ? '#fff' : '#333',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                fontWeight: 'bold',
-                transition: 'background-color 0.2s'
+                width: '100%',
+                minHeight: '150px',
+                padding: '16px',
+                borderRadius: '6px',
+                border: '1px solid #ccc',
+                fontSize: '15px',
+                lineHeight: '1.6',
+                backgroundColor: '#f9f9f9',
+                color: '#333',
+                resize: 'vertical',
+                boxSizing: 'border-box'
               }}
-            >
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
+            />
+            {excerpt && (
+              <button
+                onClick={handleCopy}
+                style={{
+                  position: 'absolute',
+                  top: '32px',
+                  right: '8px',
+                  padding: '6px 12px',
+                  backgroundColor: copied ? '#28a745' : '#e0e0e0',
+                  color: copied ? '#fff' : '#333',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 'bold',
+                  transition: 'background-color 0.2s'
+                }}
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            )}
+          </div>
+
+          {currentPrompt && (
+            <div style={{ position: 'relative' }}>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#555', marginBottom: '8px' }}>
+                Full LLM Prompt
+              </label>
+              <textarea
+                readOnly
+                value={currentPrompt}
+                style={{
+                  width: '100%',
+                  minHeight: '200px',
+                  padding: '16px',
+                  borderRadius: '6px',
+                  border: '1px solid #6c757d',
+                  fontSize: '13px',
+                  lineHeight: '1.4',
+                  backgroundColor: '#f8f9fa',
+                  color: '#495057',
+                  fontFamily: 'monospace',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
           )}
         </div>
       )}
