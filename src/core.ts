@@ -58,18 +58,23 @@ export function generateTTF(text: string, title?: string, sourceLang?: string, t
 
 /**
  * Generates an LLM prompt that includes the TTF JSON and instructions for 
- * improving phrase splitting and translation.
+ * improving phrase splitting and translation, following Twigit standards.
  */
 export function generateTTFPrompt(text: string, title?: string, sourceLang?: string, targetLang?: string): string {
   const ttfJson = generateTTF(text, title, sourceLang, targetLang);
   
-  return `You are a translation assistant. Below is a text excerpt from "${title || 'Unknown'}" in ${sourceLang || 'the source language'}, naively chunked into Twigit Text Format (TTF).
+  return `You are a supreme language expert. You produce top-tier wording and translations. You only output JSON.
+
+Below is a text excerpt from "${title || 'Unknown'}" in ${sourceLang || 'the source language'}, naively chunked into Twigit Text Format (TTF).
 
 Your task:
-1. Improve the phrase splitting ('p' field) so phrases are meaningful and natural for a language learner (max 3 words recommended).
-2. Translate each phrase into ${targetLang || 'the target language'} ('t' field).
-3. Preserve the 'title', 'language', and 'target_language' fields.
-4. Output ONLY the final valid JSON TTF.
+1. Split the ${sourceLang || 'source language'} text into chunks of at most three words each.
+2. Improve the phrase splitting ('p' field) so phrases are meaningful and natural for a language learner.
+3. Translate each chunk independently into ${targetLang || 'the target language'} ('t' field).
+4. Example: if the chunk is 'teeth,' the translation must only be 'teeth,' not 'his teeth' or 'white teeth.'
+5. Output non-whitespace punctuation and whitespaces as separate objects with empty translation. Ensure no characters from the original text are lost.
+6. Preserve the 'title', 'language', and 'target_language' fields.
+7. Output ONLY the final valid JSON TTF.
 
 TTF Input:
 ${ttfJson}`;
