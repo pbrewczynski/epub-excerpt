@@ -23,7 +23,9 @@
     "build": "tsup",
     "build:lib": "tsup",
     "dev": "tsup --watch",
-    "lint": "tsc"
+    "lint": "tsc",
+    "test:comp": "npm run build && npm run dev --prefix test_build_comp",
+    "build:comp": "npm run build && npm run build --prefix test_build_comp"
   },
   "keywords": [],
   "author": "",

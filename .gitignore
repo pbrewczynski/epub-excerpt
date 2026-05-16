@@ -38,6 +38,7 @@ coverage/
 
 # Temporary files
 *.epub
+package-lock.json
 create_test_epub.js
 tmp/
 temp/

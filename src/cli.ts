@@ -2,7 +2,7 @@
 import { Command } from 'commander';
 import fs from 'fs';
 import path from 'path';
-import { createRandomExcerpt } from './core.js';
+import { loadEpub, extractExcerpt, generateTTF, generateTTFPrompt } from './core.js';
 
 const program = new Command();
 
@@ -16,6 +16,10 @@ program
   .option('-w, --max-words <number>', 'Maximum words in excerpt', '250')
   .option('-s, --max-sentences <number>', 'Maximum sentences (overrides word mode if >0)', '0')
   .option('-j, --json', 'Output as JSON')
+  .option('-t, --ttf', 'Output in Twigit Text Format (.ttf)')
+  .option('-p, --prompt', 'Output an LLM prompt for TTF translation/improvement')
+  .option('--lang <string>', 'Source language for TTF', 'EN')
+  .option('--target-lang <string>', 'Target language for TTF', 'PL')
   .action(async (epubPath, options) => {
     try {
       const fullPath = path.resolve(epubPath);
@@ -35,11 +39,19 @@ program
         excerptOptions.maxSentences = maxSentences;
       }
 
-      const excerpt = await createRandomExcerpt(buffer, excerptOptions);
+      const { title, fullText } = await loadEpub(buffer);
+      const excerpt = extractExcerpt(fullText, excerptOptions);
 
-      if (options.json) {
+      if (options.prompt) {
+        const prompt = generateTTFPrompt(excerpt, title, options.lang, options.targetLang);
+        console.log(prompt);
+      } else if (options.ttf) {
+        const ttf = generateTTF(excerpt, title, options.lang, options.targetLang);
+        console.log(ttf);
+      } else if (options.json) {
         console.log(JSON.stringify({
           source: epubPath,
+          title,
           maxWords,
           maxSentences: maxSentences > 0 ? maxSentences : null,
           wordCount: excerpt.split(' ').length,
@@ -47,7 +59,7 @@ program
         }, null, 2));
       } else {
         console.log('\n' + '─'.repeat(60));
-        console.log(`RANDOM EXCERPT from ${path.basename(epubPath)}`);
+        console.log(`RANDOM EXCERPT from ${title || path.basename(epubPath)}`);
         console.log('─'.repeat(60));
         console.log(excerpt.split('\n').map((line: string) => '    ' + line).join('\n'));
         console.log('─'.repeat(60));

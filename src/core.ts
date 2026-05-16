@@ -11,6 +11,13 @@ export interface EpubData {
   fullText: string;
 }
 
+export interface TTFSimple {
+  title?: string;
+  language?: string;
+  target_language?: string;
+  phrases: { p: string; t: string }[];
+}
+
 export function splitIntoSentences(text: string): string[] {
   const regex = /(?<!\b[A-Z])(?<!\b(?:Mr|Ms|Dr|Sr|Jr|St|vs))(?<!\b(?:Mrs|Rev|etc|e\.g|i\.e))(?<!\bProf)([.!?]+)(?=\s+["'A-Z]|\s*$)/;
   const parts = text.split(regex);
@@ -23,6 +30,49 @@ export function splitIntoSentences(text: string): string[] {
     if (fullSentence.length > 3) sentences.push(fullSentence);
   }
   return sentences;
+}
+
+/**
+ * Generates TTF (Twigit Text Format) content from text.
+ */
+export function generateTTF(text: string, title?: string, sourceLang?: string, targetLang?: string): string {
+  const words = text.split(/\s+/).filter(w => w.length > 0);
+  const phrases: { p: string; t: string }[] = [];
+  
+  for (let i = 0; i < words.length; i += 3) {
+    phrases.push({
+      p: words.slice(i, i + 3).join(' '),
+      t: ""
+    });
+  }
+
+  const ttf: TTFSimple = {
+    title,
+    language: sourceLang,
+    target_language: targetLang,
+    phrases
+  };
+
+  return JSON.stringify(ttf, null, 2);
+}
+
+/**
+ * Generates an LLM prompt that includes the TTF JSON and instructions for 
+ * improving phrase splitting and translation.
+ */
+export function generateTTFPrompt(text: string, title?: string, sourceLang?: string, targetLang?: string): string {
+  const ttfJson = generateTTF(text, title, sourceLang, targetLang);
+  
+  return `You are a translation assistant. Below is a text excerpt from "${title || 'Unknown'}" in ${sourceLang || 'the source language'}, naively chunked into Twigit Text Format (TTF).
+
+Your task:
+1. Improve the phrase splitting ('p' field) so phrases are meaningful and natural for a language learner (max 3 words recommended).
+2. Translate each phrase into ${targetLang || 'the target language'} ('t' field).
+3. Preserve the 'title', 'language', and 'target_language' fields.
+4. Output ONLY the final valid JSON TTF.
+
+TTF Input:
+${ttfJson}`;
 }
 
 /**
