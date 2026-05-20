@@ -18,8 +18,16 @@ export interface TTFSimple {
   phrases: { p: string; t: string }[];
 }
 
+export function detectLanguage(text: string): string {
+  // Simple detection for Russian based on Cyrillic characters
+  const cyrillicRegex = /[\u0400-\u04FF]/;
+  return cyrillicRegex.test(text) ? 'RU' : 'EN';
+}
+
 export function splitIntoSentences(text: string): string[] {
-  const regex = /(?<!\b[A-Z])(?<!\b(?:Mr|Ms|Dr|Sr|Jr|St|vs))(?<!\b(?:Mrs|Rev|etc|e\.g|i\.e))(?<!\bProf)([.!?]+)(?=\s+["'A-Z]|\s*$)/;
+  // Improved unicode-aware regex to support Russian/English characters and common abbreviations
+  // Handles initials (A. Pushkin), common abbreviations (т.д., ул., Mr.), and quotes (including Russian «»).
+  const regex = /(?<!(?<!\p{L})(?:\p{Lu}|Mr|Ms|Dr|Sr|Jr|St|vs|Mrs|Rev|etc|e\.g|i\.e|Prof|т\.е|т\.д|т\.п|т\.к|г|ул|стр|проф|акад|доц|см|напр|руб|коп))(?<!(?<!\p{L})и (?:др|пр))([.!?]+)(?=\s+["'«\p{Lu}]|\s*$)/gu;
   const parts = text.split(regex);
   const sentences: string[] = [];
 
@@ -27,21 +35,23 @@ export function splitIntoSentences(text: string): string[] {
     const sentenceText = parts[i] || '';
     const punctuation = parts[i + 1] || '';
     const fullSentence = (sentenceText + punctuation).trim();
-    if (fullSentence.length > 3) sentences.push(fullSentence);
+    if (fullSentence.length > 2) sentences.push(fullSentence);
   }
   return sentences;
 }
 
 /**
  * Generates TTF (Twigit Text Format) content from text.
+ * Improved to preserve all characters including whitespaces and punctuation.
  */
 export function generateTTF(text: string, title?: string, sourceLang?: string, targetLang?: string): string {
-  const words = text.split(/\s+/).filter(w => w.length > 0);
+  // Regex to split into words, whitespace, and punctuation using unicode properties
+  const chunks = text.split(/(\s+|[^\p{L}\p{N}_])/gu).filter(c => c.length > 0);
   const phrases: { p: string; t: string }[] = [];
   
-  for (const word of words) {
+  for (const chunk of chunks) {
     phrases.push({
-      p: word,
+      p: chunk,
       t: ""
     });
   }
@@ -54,6 +64,30 @@ export function generateTTF(text: string, title?: string, sourceLang?: string, t
   };
 
   return JSON.stringify(ttf, null, 2);
+}
+
+/**
+ * Generates a link to import the TTF into the Twigit app or web interface.
+ */
+export function generateTwigitLink(ttf: string, sourceLang: string = 'EN', targetLang: string = 'PL'): string {
+  const encodedTTF = encodeURIComponent(ttf).replace(/%20/g, '+');
+  
+  // Map target language to potential app schemes
+  const schemeMap: Record<string, string> = {
+    'PL': 'twigitpl',
+    'RU': 'twigitru',
+    'UK': 'twigituk',
+    'HE': 'twigithe',
+    'EN': 'twigitruen' // Fallback or specific combo
+  };
+
+  const scheme = schemeMap[targetLang.toUpperCase()] || 'twigit';
+  const langCombo = `${sourceLang.toLowerCase()}-${targetLang.toLowerCase()}`;
+  
+  return {
+    app: `${scheme}://${encodedTTF}?import_mode=full`,
+    web: `https://twigit.app/${langCombo}/?import_json=${encodedTTF}&import_mode=full`
+  } as any;
 }
 
 /**
@@ -76,7 +110,12 @@ Your task:
 6. Preserve the 'title', 'language', and 'target_language' fields.
 7. Output ONLY the final valid JSON TTF.
 
-TTF Input:
+ORIGINAL TEXT FOR REFERENCE:
+"""
+${text}
+"""
+
+TTF Input (Improve this):
 ${ttfJson}`;
 }
 

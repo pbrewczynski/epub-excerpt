@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { loadEpub, extractExcerpt, generateTTF, generateTTFPrompt, EpubData } from './core.js';
+import React, { useState, useEffect, useImperativeHandle, forwardRef, useRef } from 'react';
+import { loadEpub, extractExcerpt, generateTTF, generateTTFPrompt, EpubData, generateTwigitLink, detectLanguage } from './core.js';
+
+const LANGUAGES = ['EN', 'PL', 'RU', 'UK', 'DE', 'FR', 'ES', 'IT', 'PT', 'NL', 'CS', 'HU', 'RO', 'HE', 'AR', 'ZH', 'JA', 'KO'];
 
 export interface EpubExcerptProps {
   src: string | Blob | File;
@@ -15,6 +17,8 @@ export interface EpubExcerptProps {
   defaultSourceLang?: string;
   /** Default target language for TTF export (e.g. 'PL') */
   defaultTargetLang?: string;
+  /** Optional key to persist component state (mode, amount, languages, excerpt) in localStorage */
+  persistenceKey?: string;
 }
 
 /**
@@ -25,6 +29,8 @@ export interface EpubExcerptHandle {
   generate: () => void;
   /** Trigger download of the current excerpt in Twigit Text Format (.ttf) */
   downloadTTF: () => void;
+  /** Open the current excerpt in the Twigit Web app */
+  openInTwigit: () => void;
   /** Copy an LLM prompt containing the TTF to clipboard */
   copyLLMPrompt: () => void;
   /** Current excerpt text */
@@ -43,10 +49,23 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
   showPreview = true,
   defaultSourceLang = 'EN',
   defaultTargetLang = 'PL',
+  persistenceKey,
 }, ref) => {
+  // Helper to get persisted value
+  const getPersisted = (key: string, defaultValue: any) => {
+    if (typeof window === 'undefined' || !persistenceKey) return defaultValue;
+    const saved = localStorage.getItem(`${persistenceKey}_${key}`);
+    if (saved === null) return defaultValue;
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return saved;
+    }
+  };
+
   // Data States
   const [bookData, setBookData] = useState<EpubData | null>(null);
-  const [excerpt, setExcerpt] = useState<string>('');
+  const [excerpt, setExcerpt] = useState<string>(() => getPersisted('excerpt', ''));
   
   // UI States
   const [loading, setLoading] = useState<boolean>(true);
@@ -56,15 +75,28 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
   const [currentPrompt, setCurrentPrompt] = useState<string>('');
   
   // Option States
-  const [mode, setMode] = useState<'sentences' | 'words'>(defaultMode);
-  const [amount, setAmount] = useState<number>(defaultAmount);
-  const [sourceLang, setSourceLang] = useState<string>(defaultSourceLang);
-  const [targetLang, setTargetLang] = useState<string>(defaultTargetLang);
+  const [mode, setMode] = useState<'sentences' | 'words'>(() => getPersisted('mode', defaultMode));
+  const [amount, setAmount] = useState<number>(() => getPersisted('amount', defaultAmount));
+  const [sourceLang, setSourceLang] = useState<string>(() => getPersisted('sourceLang', defaultSourceLang));
+  const [targetLang, setTargetLang] = useState<string>(() => getPersisted('targetLang', defaultTargetLang));
+
+  const isInitialMount = useRef(true);
+
+  // Persistence effect
+  useEffect(() => {
+    if (typeof window === 'undefined' || !persistenceKey) return;
+    localStorage.setItem(`${persistenceKey}_mode`, JSON.stringify(mode));
+    localStorage.setItem(`${persistenceKey}_amount`, JSON.stringify(amount));
+    localStorage.setItem(`${persistenceKey}_sourceLang`, JSON.stringify(sourceLang));
+    localStorage.setItem(`${persistenceKey}_targetLang`, JSON.stringify(targetLang));
+    localStorage.setItem(`${persistenceKey}_excerpt`, JSON.stringify(excerpt));
+  }, [persistenceKey, mode, amount, sourceLang, targetLang, excerpt]);
 
   // Expose methods to parent components
   useImperativeHandle(ref, () => ({
     generate: handleGenerate,
     downloadTTF: handleDownloadTTF,
+    openInTwigit: handleOpenInTwigit,
     copyLLMPrompt: handleCopyPrompt,
     excerpt,
     bookData
@@ -76,7 +108,10 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
       setLoading(true);
       setError(null);
       setBookData(null);
-      setExcerpt('');
+      if (!isInitialMount.current) {
+        setExcerpt('');
+      }
+      isInitialMount.current = false;
       try {
         let data: ArrayBuffer;
         if (typeof src === 'string') {
@@ -125,6 +160,13 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
       const newExcerpt = extractExcerpt(bookData.fullText, options);
       setExcerpt(newExcerpt);
       setCopied(false);
+
+      const detected = detectLanguage(newExcerpt);
+      setSourceLang(detected);
+      if (targetLang === detected) {
+        const langs = LANGUAGES;
+        setTargetLang(langs.find(l => l !== detected) || 'PL');
+      }
       
       if (onExcerptGenerated) onExcerptGenerated(newExcerpt);
     }, 50);
@@ -160,6 +202,12 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleOpenInTwigit = () => {
+    const ttfContent = generateTTF(excerpt, bookData?.title, sourceLang, targetLang);
+    const links: any = generateTwigitLink(ttfContent, sourceLang, targetLang);
+    window.open(links.web, '_blank');
   };
 
   const handleCopyPrompt = async () => {
@@ -258,24 +306,35 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Source Lang</label>
-          <input 
-            type="text" 
-            value={sourceLang} 
-            onChange={(e) => setSourceLang(e.target.value.toUpperCase())}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '60px' }}
-            placeholder="EN"
-          />
+          <select
+            value={sourceLang}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSourceLang(val);
+              if (targetLang === val) {
+                const langs = LANGUAGES;
+                setTargetLang(langs.find(l => l !== val) || 'PL');
+              }
+            }}
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            {LANGUAGES.filter(l => l !== targetLang).map(l => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Target Lang</label>
-          <input 
-            type="text" 
-            value={targetLang} 
-            onChange={(e) => setTargetLang(e.target.value.toUpperCase())}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '60px' }}
-            placeholder="PL"
-          />
+          <select
+            value={targetLang}
+            onChange={(e) => setTargetLang(e.target.value)}
+            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
+          >
+            {LANGUAGES.filter(l => l !== sourceLang).map(l => (
+              <option key={l} value={l}>{l}</option>
+            ))}
+          </select>
         </div>
 
         <button 
@@ -294,6 +353,24 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
           }}
         >
           Download .ttf
+        </button>
+
+        <button 
+          onClick={handleOpenInTwigit}
+          disabled={!excerpt}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: '#ffc107',
+            color: '#212529',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: excerpt ? 'pointer' : 'not-allowed',
+            fontWeight: 'bold',
+            height: '35px',
+            opacity: excerpt ? 1 : 0.6
+          }}
+        >
+          Open in Twigit
         </button>
 
         <button 

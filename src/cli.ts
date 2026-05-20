@@ -3,14 +3,14 @@ import { Command } from 'commander';
 import fs from 'fs';
 import path from 'path';
 import clipboardy from 'clipboardy';
-import { loadEpub, extractExcerpt, generateTTF, generateTTFPrompt } from './core.js';
+import { loadEpub, extractExcerpt, generateTTF, generateTTFPrompt, ExcerptOptions, generateTwigitLink, detectLanguage } from './core.js';
 
 const program = new Command();
 
 program
   .name('epub-excerpt')
   .description('Extract a random excerpt from an EPUB file')
-  .version('1.1.3');
+  .version('1.1.4');
 
 program
   .argument('<path>', 'Path to the .epub file')
@@ -20,7 +20,7 @@ program
   .option('-t, --ttf', 'Output in Twigit Text Format (.ttf)')
   .option('-p, --prompt', 'Output an LLM prompt for TTF translation/improvement')
   .option('-c, --copy', 'Copy the LLM prompt directly to clipboard')
-  .option('--lang <string>', 'Source language for TTF', 'EN')
+  .option('--lang <string>', 'Source language for TTF (defaults to EN or RU if detected)')
   .option('--target-lang <string>', 'Target language for TTF', 'PL')
   .action(async (epubPath, options) => {
     try {
@@ -34,7 +34,7 @@ program
       const maxWords = parseInt(options.maxWords, 10);
       const maxSentences = parseInt(options.maxSentences, 10);
 
-      const excerptOptions: any = {
+      const excerptOptions: ExcerptOptions = {
         maxWords,
       };
       if (maxSentences > 0) {
@@ -44,8 +44,12 @@ program
       const { title, fullText } = await loadEpub(buffer);
       const excerpt = extractExcerpt(fullText, excerptOptions);
 
+      // Auto-detect language if not explicitly provided
+      const detectedLang = options.lang === 'EN' ? detectLanguage(excerpt) : options.lang;
+      const detectedTargetLang = (options.targetLang === 'PL' && detectedLang === 'RU') ? 'RU' : options.targetLang;
+
       if (options.prompt || options.copy) {
-        const prompt = generateTTFPrompt(excerpt, title, options.lang, options.targetLang);
+        const prompt = generateTTFPrompt(excerpt, title, detectedLang, detectedTargetLang);
         
         if (options.copy) {
           try {
@@ -66,8 +70,14 @@ program
           console.log('\n' + '═'.repeat(60) + '\n');
         }
       } else if (options.ttf) {
-        const ttf = generateTTF(excerpt, title, options.lang, options.targetLang);
+        const ttf = generateTTF(excerpt, title, detectedLang, detectedTargetLang);
+        const links: any = generateTwigitLink(ttf, detectedLang, detectedTargetLang);
         console.log(ttf);
+        console.log('\n' + '─'.repeat(60));
+        console.log('IMPORT TO TWIGIT:');
+        console.log(`Web: ${links.web}`);
+        console.log(`App: ${links.app}`);
+        console.log('─'.repeat(60));
       } else if (options.json) {
         console.log(JSON.stringify({
           source: epubPath,

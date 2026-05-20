@@ -32,6 +32,11 @@ npx epub-excerpt mybook.epub --max-sentences 5
 - `-w, --max-words <number>`: Maximum words in excerpt (default: 250).
 - `-s, --max-sentences <number>`: Maximum sentences (overrides word mode if >0).
 - `-j, --json`: Output as JSON.
+- `-t, --ttf`: Output in Twigit Text Format (.ttf).
+- `-p, --prompt`: Output an LLM prompt for TTF translation/improvement.
+- `-c, --copy`: Copy the LLM prompt directly to clipboard.
+- `--lang <string>`: Source language for TTF (default: EN).
+- `--target-lang <string>`: Target language for TTF (default: PL).
 
 ## React Component Usage
 

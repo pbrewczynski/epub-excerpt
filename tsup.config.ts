@@ -19,8 +19,9 @@ export default defineConfig([
     dts: true,
     splitting: false,
     sourcemap: true,
-    clean: false, // Don't clean here or it might delete index.js
+    clean: false,
     platform: 'node',
     shims: true,
+    noExternal: [/./],
   }
 ]);
