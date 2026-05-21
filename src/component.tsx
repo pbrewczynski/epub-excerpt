@@ -4,15 +4,19 @@ import { loadEpub, extractExcerpt, generateTTF, generateTTFPrompt, EpubData, gen
 const LANGUAGES = ['EN', 'PL', 'RU', 'UK', 'DE', 'FR', 'ES', 'IT', 'PT', 'NL', 'CS', 'HU', 'RO', 'HE', 'AR', 'ZH', 'JA', 'KO'];
 
 export interface EpubExcerptProps {
-  src: string | Blob | File;
+  src?: string | Blob | File;
   defaultMode?: 'sentences' | 'words';
   defaultAmount?: number;
   className?: string;
   style?: React.CSSProperties;
   /** Callback triggered whenever a new excerpt is generated */
   onExcerptGenerated?: (excerpt: string) => void;
+  /** Callback triggered when a new book is successfully loaded */
+  onBookLoaded?: (data: EpubData, src: string | Blob | File) => void;
   /** Whether to show the built-in preview textarea. Defaults to true. */
   showPreview?: boolean;
+  /** Whether to allow users to upload their own EPUB files. Defaults to true. */
+  allowUpload?: boolean;
   /** Default source language for TTF export (e.g. 'EN') */
   defaultSourceLang?: string;
   /** Default target language for TTF export (e.g. 'PL') */
@@ -33,6 +37,8 @@ export interface EpubExcerptHandle {
   openInTwigit: () => void;
   /** Copy an LLM prompt containing the TTF to clipboard */
   copyLLMPrompt: () => void;
+  /** Trigger the file upload dialog */
+  openFileUpload: () => void;
   /** Current excerpt text */
   excerpt: string;
   /** Current book metadata */
@@ -46,7 +52,9 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
   className,
   style,
   onExcerptGenerated,
+  onBookLoaded,
   showPreview = true,
+  allowUpload = true,
   defaultSourceLang = 'EN',
   defaultTargetLang = 'PL',
   persistenceKey,
@@ -64,11 +72,12 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
   };
 
   // Data States
+  const [currentSrc, setCurrentSrc] = useState<string | Blob | File | undefined>(src);
   const [bookData, setBookData] = useState<EpubData | null>(null);
   const [excerpt, setExcerpt] = useState<string>(() => getPersisted('excerpt', ''));
   
   // UI States
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [promptCopied, setPromptCopied] = useState<boolean>(false);
@@ -81,6 +90,20 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
   const [targetLang, setTargetLang] = useState<string>(() => getPersisted('targetLang', defaultTargetLang));
 
   const isInitialMount = useRef(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Stabilize callbacks using refs
+  const onExcerptGeneratedRef = useRef(onExcerptGenerated);
+  const onBookLoadedRef = useRef(onBookLoaded);
+  useEffect(() => { onExcerptGeneratedRef.current = onExcerptGenerated; }, [onExcerptGenerated]);
+  useEffect(() => { onBookLoadedRef.current = onBookLoaded; }, [onBookLoaded]);
+
+  // Sync internal src with prop if it changes
+  useEffect(() => {
+    if (src !== undefined) {
+      setCurrentSrc(src);
+    }
+  }, [src]);
 
   // Persistence effect
   useEffect(() => {
@@ -98,24 +121,28 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
     downloadTTF: handleDownloadTTF,
     openInTwigit: handleOpenInTwigit,
     copyLLMPrompt: handleCopyPrompt,
+    openFileUpload: () => fileInputRef.current?.click(),
     excerpt,
     bookData
   }), [handleGenerate, excerpt, bookData, sourceLang, targetLang]);
 
-  // Load the EPUB only once when `src` changes
+  // Load the EPUB when `currentSrc` changes
   useEffect(() => {
     async function fetchBook() {
+      if (!currentSrc) return;
+
       setLoading(true);
       setError(null);
-      setBookData(null);
+      
       if (!isInitialMount.current) {
         setExcerpt('');
       }
       isInitialMount.current = false;
+
       try {
         let data: ArrayBuffer;
-        if (typeof src === 'string') {
-          const response = await fetch(src);
+        if (typeof currentSrc === 'string') {
+          const response = await fetch(currentSrc);
           if (!response.ok) {
             throw new Error(`Failed to fetch EPUB: ${response.status} ${response.statusText}`);
           }
@@ -125,24 +152,26 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
           }
           data = await response.arrayBuffer();
         } else {
-          data = await (src as any).arrayBuffer();
+          data = await (currentSrc as any).arrayBuffer();
         }
 
         if (data.byteLength === 0) {
-          throw new Error('The fetched EPUB file is empty.');
+          throw new Error('The EPUB file is empty.');
         }
 
         const parsedData = await loadEpub(data);
         setBookData(parsedData);
+        if (onBookLoadedRef.current) onBookLoadedRef.current(parsedData, currentSrc);
       } catch (err: any) {
         setError(err.message || 'An error occurred while parsing the EPUB');
+        setBookData(null);
       } finally {
         setLoading(false);
       }
     }
 
     fetchBook();
-  }, [src]);
+  }, [currentSrc]);
 
   // Generate excerpt handler
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,7 +197,7 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
         setTargetLang(langs.find(l => l !== detected) || 'PL');
       }
       
-      if (onExcerptGenerated) onExcerptGenerated(newExcerpt);
+      if (onExcerptGeneratedRef.current) onExcerptGeneratedRef.current(newExcerpt);
     }, 50);
   }
 
@@ -222,12 +251,15 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
     }
   };
 
-  if (loading) {
-    return <div style={{ padding: '20px', ...style }}>Loading book data...</div>;
-  }
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCurrentSrc(file);
+    }
+  };
 
-  if (error) {
-    return <div style={{ color: 'red', padding: '20px', ...style }}>Error: {error}</div>;
+  if (loading && !bookData) {
+    return <div style={{ padding: '20px', ...style }}>Loading book data...</div>;
   }
 
   return (
@@ -237,235 +269,325 @@ export const EpubExcerpt = forwardRef<EpubExcerptHandle, EpubExcerptProps>(({
         display: 'flex',
         flexDirection: 'column',
         gap: '16px',
-        padding: '20px',
+        padding: '24px',
         border: '1px solid #e0e0e0',
-        borderRadius: '8px',
-        fontFamily: 'sans-serif',
+        borderRadius: '12px',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
         maxWidth: '800px',
         backgroundColor: '#fff',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
         ...style
       }}
     >
-      {/* Header */}
-      <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#333' }}>
-        {bookData?.title || 'Unknown Book'}
-      </h2>
-
-      {/* Controls */}
-      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Extract By</label>
-          <select 
-            value={mode} 
-            onChange={(e) => setMode(e.target.value as 'sentences' | 'words')}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            <option value="sentences">Sentences</option>
-            <option value="words">Words</option>
-          </select>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Amount</label>
-          <input 
-            type="number" 
-            min="1" 
-            value={amount} 
-            onChange={(e) => setAmount(Number(e.target.value))}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '80px' }}
-          />
-        </div>
-
-        <button 
-          onClick={handleGenerate}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            height: '35px'
-          }}
-        >
-          Generate Random Excerpt
-        </button>
-      </div>
-
-      {/* TTF Export Controls */}
-      <div 
-        style={{ 
-          display: 'flex', 
-          gap: '16px', 
-          flexWrap: 'wrap', 
-          alignItems: 'flex-end',
-          paddingTop: '8px',
-          borderTop: '1px solid #eee'
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Source Lang</label>
-          <select
-            value={sourceLang}
-            onChange={(e) => {
-              const val = e.target.value;
-              setSourceLang(val);
-              if (targetLang === val) {
-                const langs = LANGUAGES;
-                setTargetLang(langs.find(l => l !== val) || 'PL');
-              }
-            }}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            {LANGUAGES.filter(l => l !== targetLang).map(l => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#555' }}>Target Lang</label>
-          <select
-            value={targetLang}
-            onChange={(e) => setTargetLang(e.target.value)}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
-          >
-            {LANGUAGES.filter(l => l !== sourceLang).map(l => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
-        </div>
-
-        <button 
-          onClick={handleDownloadTTF}
-          disabled={!excerpt}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#28a745',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: excerpt ? 'pointer' : 'not-allowed',
-            fontWeight: 'bold',
-            height: '35px',
-            opacity: excerpt ? 1 : 0.6
-          }}
-        >
-          Download .ttf
-        </button>
-
-        <button 
-          onClick={handleOpenInTwigit}
-          disabled={!excerpt}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: '#ffc107',
-            color: '#212529',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: excerpt ? 'pointer' : 'not-allowed',
-            fontWeight: 'bold',
-            height: '35px',
-            opacity: excerpt ? 1 : 0.6
-          }}
-        >
-          Open in Twigit
-        </button>
-
-        <button 
-          onClick={handleCopyPrompt}
-          disabled={!excerpt}
-          style={{
-            padding: '8px 16px',
-            backgroundColor: promptCopied ? '#28a745' : '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: excerpt ? 'pointer' : 'not-allowed',
-            fontWeight: 'bold',
-            height: '35px',
-            opacity: excerpt ? 1 : 0.6,
-            transition: 'background-color 0.2s'
-          }}
-        >
-          {promptCopied ? 'Prompt Copied!' : 'Copy LLM Prompt'}
-        </button>
-      </div>
-
-      {/* Output Area (Optional) */}
-      {showPreview && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ position: 'relative' }}>
-            <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#555', marginBottom: '8px' }}>
-              Text Excerpt
-            </label>
-            <textarea
-              readOnly
-              value={excerpt}
-              style={{
-                width: '100%',
-                minHeight: '150px',
-                padding: '16px',
-                borderRadius: '6px',
-                border: '1px solid #ccc',
-                fontSize: '15px',
-                lineHeight: '1.6',
-                backgroundColor: '#f9f9f9',
-                color: '#333',
-                resize: 'vertical',
-                boxSizing: 'border-box'
-              }}
+      {/* Header & Upload */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1a1a1a', fontWeight: 700 }}>
+          {bookData?.title || (error ? 'Error Loading Book' : 'No Book Loaded')}
+        </h2>
+        
+        {allowUpload && (
+          <div>
+            <input 
+              type="file" 
+              accept=".epub" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              style={{ display: 'none' }} 
             />
-            {excerpt && (
-              <button
-                onClick={handleCopy}
-                style={{
-                  position: 'absolute',
-                  top: '32px',
-                  right: '8px',
-                  padding: '6px 12px',
-                  backgroundColor: copied ? '#28a745' : '#e0e0e0',
-                  color: copied ? '#fff' : '#333',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                  fontWeight: 'bold',
-                  transition: 'background-color 0.2s'
-                }}
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: '8px 14px',
+                backgroundColor: '#f0f0f0',
+                color: '#333',
+                border: '1px solid #ddd',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <span>📂</span> {bookData ? 'Change Book' : 'Upload EPUB'}
+            </button>
           </div>
+        )}
+      </div>
 
-          {currentPrompt && (
-            <div style={{ position: 'relative' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', color: '#555', marginBottom: '8px' }}>
-                Full LLM Prompt
-              </label>
-              <textarea
-                readOnly
-                value={currentPrompt}
-                style={{
-                  width: '100%',
-                  minHeight: '200px',
-                  padding: '16px',
-                  borderRadius: '6px',
-                  border: '1px solid #6c757d',
-                  fontSize: '13px',
-                  lineHeight: '1.4',
-                  backgroundColor: '#f8f9fa',
-                  color: '#495057',
-                  fontFamily: 'monospace',
-                  resize: 'vertical',
-                  boxSizing: 'border-box'
-                }}
+      {error && (
+        <div style={{ 
+          padding: '12px 16px', 
+          backgroundColor: '#fff5f5', 
+          color: '#c53030', 
+          borderRadius: '6px', 
+          border: '1px solid #feb2b2',
+          fontSize: '0.9rem'
+        }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      {!bookData && !loading && !error && (
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: '#666', border: '2px dashed #eee', borderRadius: '8px' }}>
+          <p style={{ margin: '0 0 16px 0' }}>Please upload an EPUB file to start extracting excerpts.</p>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 600
+            }}
+          >
+            Select EPUB File
+          </button>
+        </div>
+      )}
+
+      {bookData && (
+        <>
+          {/* Controls */}
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end', padding: '16px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#666', textTransform: 'uppercase' }}>Extract By</label>
+              <select 
+                value={mode} 
+                onChange={(e) => setMode(e.target.value as 'sentences' | 'words')}
+                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: '#fff', fontSize: '0.95rem' }}
+              >
+                <option value="sentences">Sentences</option>
+                <option value="words">Words</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#666', textTransform: 'uppercase' }}>Amount</label>
+              <input 
+                type="number" 
+                min="1" 
+                value={amount} 
+                onChange={(e) => setAmount(Number(e.target.value))}
+                style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #ced4da', width: '70px', fontSize: '0.95rem' }}
               />
             </div>
+
+            <button 
+              onClick={handleGenerate}
+              disabled={loading}
+              style={{
+                padding: '9px 20px',
+                backgroundColor: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                flexGrow: 1,
+                opacity: loading ? 0.7 : 1
+              }}
+            >
+              {loading ? 'Processing...' : 'Generate New Excerpt'}
+            </button>
+          </div>
+
+          {/* TTF Export Controls */}
+          <div 
+            style={{ 
+              display: 'flex', 
+              gap: '12px', 
+              flexWrap: 'wrap', 
+              alignItems: 'flex-end',
+              paddingTop: '16px',
+              borderTop: '1px solid #eee'
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#666', textTransform: 'uppercase' }}>Source</label>
+              <select
+                value={sourceLang}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSourceLang(val);
+                  if (targetLang === val) {
+                    const langs = LANGUAGES;
+                    setTargetLang(langs.find(l => l !== val) || 'PL');
+                  }
+                }}
+                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: '#fff', fontSize: '0.9rem' }}
+              >
+                {LANGUAGES.filter(l => l !== targetLang).map(l => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#666', textTransform: 'uppercase' }}>Target</label>
+              <select
+                value={targetLang}
+                onChange={(e) => setTargetLang(e.target.value)}
+                style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid #ced4da', backgroundColor: '#fff', fontSize: '0.9rem' }}
+              >
+                {LANGUAGES.filter(l => l !== sourceLang).map(l => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', flexGrow: 1, flexWrap: 'wrap' }}>
+              <button 
+                onClick={handleDownloadTTF}
+                disabled={!excerpt}
+                title="Download as .ttf file"
+                style={{
+                  padding: '9px 12px',
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: excerpt ? 'pointer' : 'not-allowed',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  opacity: excerpt ? 1 : 0.6,
+                  flexGrow: 1
+                }}
+              >
+                💾 .ttf
+              </button>
+
+              <button 
+                onClick={handleOpenInTwigit}
+                disabled={!excerpt}
+                title="Open in Twigit Web App"
+                style={{
+                  padding: '9px 12px',
+                  backgroundColor: '#ffc107',
+                  color: '#212529',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: excerpt ? 'pointer' : 'not-allowed',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  opacity: excerpt ? 1 : 0.6,
+                  flexGrow: 1
+                }}
+              >
+                🚀 Twigit
+              </button>
+
+              <button 
+                onClick={handleCopyPrompt}
+                disabled={!excerpt}
+                title="Copy LLM Prompt for translation"
+                style={{
+                  padding: '9px 12px',
+                  backgroundColor: promptCopied ? '#28a745' : '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: excerpt ? 'pointer' : 'not-allowed',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  opacity: excerpt ? 1 : 0.6,
+                  transition: 'background-color 0.2s',
+                  flexGrow: 2
+                }}
+              >
+                {promptCopied ? '✓ Prompt Copied' : '📝 LLM Prompt'}
+              </button>
+            </div>
+          </div>
+
+          {/* Output Area */}
+          {showPreview && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '8px' }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#666', textTransform: 'uppercase' }}>
+                    Excerpt Preview
+                  </label>
+                  {excerpt && (
+                    <span style={{ fontSize: '0.75rem', color: '#999' }}>
+                      {excerpt.split(/\s+/).filter(Boolean).length} words
+                    </span>
+                  )}
+                </div>
+                <textarea
+                  readOnly
+                  value={excerpt || (loading ? 'Generating...' : '')}
+                  placeholder="Generate an excerpt to see it here..."
+                  style={{
+                    width: '100%',
+                    minHeight: '180px',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    border: '1px solid #ced4da',
+                    fontSize: '1rem',
+                    lineHeight: '1.6',
+                    backgroundColor: '#fff',
+                    color: '#333',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)'
+                  }}
+                />
+                {excerpt && (
+                  <button
+                    onClick={handleCopy}
+                    style={{
+                      position: 'absolute',
+                      top: '40px',
+                      right: '12px',
+                      padding: '6px 12px',
+                      backgroundColor: copied ? '#28a745' : 'rgba(255,255,255,0.9)',
+                      color: copied ? '#fff' : '#007bff',
+                      border: copied ? 'none' : '1px solid #007bff',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                )}
+              </div>
+
+              {currentPrompt && (
+                <div style={{ position: 'relative' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#666', textTransform: 'uppercase', marginBottom: '8px' }}>
+                    Full LLM Prompt
+                  </label>
+                  <textarea
+                    readOnly
+                    value={currentPrompt}
+                    style={{
+                      width: '100%',
+                      minHeight: '150px',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: '1px solid #dee2e6',
+                      fontSize: '0.85rem',
+                      lineHeight: '1.4',
+                      backgroundColor: '#f1f3f5',
+                      color: '#495057',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      resize: 'vertical',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

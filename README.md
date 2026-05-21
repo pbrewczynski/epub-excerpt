@@ -1,57 +1,74 @@
-# epub-excerpt
+# Epub Excerpt
 
-A TypeScript package providing both a CLI tool and a React (TSX) component to extract random excerpts from EPUB files.
+A well-defined, portable module and CLI for extracting random text excerpts from EPUB files and converting them into Twigit Text Format (TTF) for language learning.
 
 ## Features
 
-- **CLI Tool**: Extract random excerpts from the terminal.
-- **React Component**: A ready-to-use component for displaying excerpts in web applications.
-- **Sentence/Word Modes**: Pick excerpts based on word count or number of sentences.
+- **CLI Tool**: Extract excerpts directly from the terminal.
+- **React Component**: A polished, ready-to-use UI component for web applications.
+- **Headless Mode**: Use the component logic with your own custom UI.
+- **EPUB Upload**: Built-in support for users to upload and process their own books.
+- **TTF Export**: Generate and download TTF JSON for Twigit integration.
+- **LLM Ready**: Automatically generates prompts for high-quality translation and chunking.
 
-## Installation
+---
+
+## 📦 As a Module
+
+Install the package in your project:
 
 ```bash
 npm install epub-excerpt
 ```
 
-## CLI Usage
+### 🎨 React Component Usage
 
-Install globally or use via `npx`:
+The `EpubExcerpt` component provides a full UI for loading books, generating excerpts, and exporting them.
 
-```bash
-# Global install
-npm install -g epub-excerpt
-epub-excerpt mybook.epub --max-words 100
-
-# Using npx
-npx epub-excerpt mybook.epub --max-sentences 5
-```
-
-### Options
-
-- `-w, --max-words <number>`: Maximum words in excerpt (default: 250).
-- `-s, --max-sentences <number>`: Maximum sentences (overrides word mode if >0).
-- `-j, --json`: Output as JSON.
-- `-t, --ttf`: Output in Twigit Text Format (.ttf).
-- `-p, --prompt`: Output an LLM prompt for TTF translation/improvement.
-- `-c, --copy`: Copy the LLM prompt directly to clipboard.
-- `--lang <string>`: Source language for TTF (default: EN).
-- `--target-lang <string>`: Target language for TTF (default: PL).
-
-## React Component Usage
-
+#### Standard Usage
 ```tsx
 import { EpubExcerpt } from 'epub-excerpt';
 
-function App() {
+function MyPage() {
   return (
-    <div style={{ maxWidth: '600px', margin: 'auto' }}>
-      <h1>Random Book Excerpt</h1>
+    <EpubExcerpt 
+      src="/path/to/book.epub" 
+      defaultMode="sentences"
+      defaultAmount={3}
+      onExcerptGenerated={(text) => console.log('New excerpt:', text)}
+    />
+  );
+}
+```
+
+#### Headless / Custom UI Usage
+You can hide the built-in preview and use the component purely for its logic and controls.
+
+```tsx
+import { useState, useRef } from 'react';
+import { EpubExcerpt, EpubExcerptHandle } from 'epub-excerpt';
+
+function CustomUI() {
+  const [text, setText] = useState('');
+  const excerptRef = useRef<EpubExcerptHandle>(null);
+
+  return (
+    <div>
       <EpubExcerpt 
-        src="/path/to/book.epub" 
-        maxWords={150} 
-        label="Excerpt from My Book"
+        ref={excerptRef}
+        src="/book.epub"
+        showPreview={false}
+        onExcerptGenerated={setText}
       />
+      
+      <textarea value={text} readOnly />
+      
+      <button onClick={() => excerptRef.current?.generate()}>
+        Next Excerpt
+      </button>
+      <button onClick={() => excerptRef.current?.openFileUpload()}>
+        Upload New Book
+      </button>
     </div>
   );
 }
@@ -59,13 +76,59 @@ function App() {
 
 ### Props
 
-- `src`: URL to the `.epub` file or a `Blob`/`File` object.
-- `maxWords`: Maximum words (default: 250).
-- `maxSentences`: Maximum sentences.
-- `label`: Label for the text field.
-- `className`: Custom CSS class for the container.
-- `style`: Custom React styles for the container.
-- `onExcerptGenerated`: Callback function called when the excerpt is ready.
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `src` | `string \| Blob \| File` | `undefined` | Source EPUB file. Can be a URL or a file object. |
+| `allowUpload` | `boolean` | `true` | Show a button to let users upload their own EPUB. |
+| `showPreview` | `boolean` | `true` | Show the built-in textarea preview. |
+| `defaultMode` | `'sentences' \| 'words'` | `'sentences'` | Default extraction unit. |
+| `defaultAmount` | `number` | `5` | Default number of sentences/words. |
+| `persistenceKey` | `string` | `undefined` | If provided, saves user preferences in localStorage. |
+| `onExcerptGenerated`| `(text: string) => void` | `undefined` | Callback when a new excerpt is created. |
+| `onBookLoaded` | `(data: EpubData) => void` | `undefined` | Callback when book metadata is parsed. |
+
+### Component Methods (via Ref)
+
+Access these by passing a `useRef<EpubExcerptHandle>(null)` to the `ref` prop:
+
+- `generate()`: Triggers a new random excerpt.
+- `openFileUpload()`: Opens the system file dialog.
+- `downloadTTF()`: Triggers a download of the current excerpt in .ttf format.
+- `copyLLMPrompt()`: Copies the translation prompt to clipboard.
+- `excerpt`: (property) The current excerpt text.
+- `bookData`: (property) The current book's title and full text.
+
+---
+
+## 💻 CLI Usage
+
+If installed globally or via npx:
+
+```bash
+# Basic excerpt
+npx epub-excerpt path/to/book.epub
+
+# JSON output with word limit
+npx epub-excerpt path/to/book.epub --max-words 100 --json
+
+# Generate TTF and Twigit links
+npx epub-excerpt path/to/book.epub --ttf
+
+# Copy LLM prompt to clipboard
+npx epub-excerpt path/to/book.epub --copy
+```
+
+---
+
+## 🛠 Development
+
+```bash
+# Build the library and CLI
+npm run build
+
+# Run the test playground (Vite)
+npm run test:comp
+```
 
 ## License
 
